@@ -52,7 +52,7 @@ SP404DanceAudioProcessorEditor::SP404DanceAudioProcessorEditor (SP404DanceAudioP
     closeBtn.onClick = [this] { settingsVisible = false; settingsOverlay.setVisible (false); repaint(); };
 
     struct ParamSpec { const char* id; const char* name; };
-    const ParamSpec specs[10] = {
+    const ParamSpec specs[14] = {
         { "sensitivity", "Sensitivity" },
         { "threshLow",   "Low Thresh" },
         { "threshMid",   "Mid Thresh" },
@@ -62,10 +62,14 @@ SP404DanceAudioProcessorEditor::SP404DanceAudioProcessorEditor (SP404DanceAudioP
         { "padHigh",     "High Pad (1-12)" },
         { "cooldownMs",  "Cooldown (ms)" },
         { "pixelScale",  "Pixel Scale" },
-        { "shakalGrit",  "Shakal Grit" }
+        { "shakalGrit",  "Shakal Grit" },
+        { "attackMs",    "Attack (ms)" },
+        { "releaseMs",   "Release (ms)" },
+        { "fpsLock",     "Choppy FPS" },
+        { "handScale",   "Hand Scale" }
     };
 
-    for (size_t i = 0; i < 10; ++i)
+    for (size_t i = 0; i < 14; ++i)
     {
         auto& item = sliders[i];
         item.label.setText (specs[i].name, juce::dontSendNotification);
@@ -102,7 +106,7 @@ void SP404DanceAudioProcessorEditor::resized()
 
     for (auto& item : sliders)
     {
-        auto row = inner.removeFromTop (36);
+        auto row = inner.removeFromTop (32);
         item.label.setBounds (row.removeFromLeft (115));
         item.slider.setBounds (row);
     }
