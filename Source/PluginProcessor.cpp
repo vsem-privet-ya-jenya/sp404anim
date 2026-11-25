@@ -15,22 +15,27 @@ juce::AudioProcessorValueTreeState::ParameterLayout SP404DanceAudioProcessor::cr
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
 
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("sensitivity", "Sensitivity", 0.5f, 4.0f, 2.10f));
+    p.push_back (std::make_unique<juce::AudioParameterBool>  ("enableLow",   "Low (Kick)",  true));
+    p.push_back (std::make_unique<juce::AudioParameterBool>  ("enableMid",   "Mid (Snare)", true));
+    p.push_back (std::make_unique<juce::AudioParameterBool>  ("enableHigh",  "High (Hat)",  false));
+
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshLow",   "Low Thresh",  0.05f, 0.85f, 0.34f));
-    p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshMid",   "Mid Thresh",  0.05f, 0.85f, 0.30f));
-    p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshHigh",  "High Thresh", 0.05f, 0.85f, 0.18f));
+    p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshMid",   "Mid Thresh",  0.05f, 0.85f, 0.28f));
+    p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshHigh",  "High Thresh", 0.05f, 0.85f, 0.20f));
 
     p.push_back (std::make_unique<juce::AudioParameterInt> ("padLow",  "Low Pad",  1, 12, 1));
-    p.push_back (std::make_unique<juce::AudioParameterInt> ("padMid",  "Mid Pad",  1, 12, 6));
+    p.push_back (std::make_unique<juce::AudioParameterInt> ("padMid",  "Mid Pad",  1, 12, 7));
     p.push_back (std::make_unique<juce::AudioParameterInt> ("padHigh", "High Pad", 1, 12, 4));
 
-    p.push_back (std::make_unique<juce::AudioParameterFloat> ("attackMs",   "Attack ms",   16.0f, 250.0f, 32.0f));
-    p.push_back (std::make_unique<juce::AudioParameterFloat> ("releaseMs",  "Release ms",  60.0f, 600.0f, 135.0f));
+    p.push_back (std::make_unique<juce::AudioParameterFloat> ("attackMs",   "Attack ms",   16.0f, 250.0f, 42.0f));
+    p.push_back (std::make_unique<juce::AudioParameterFloat> ("lingerMs",   "Stay on Pad", 150.0f, 2500.0f, 950.0f));
+    p.push_back (std::make_unique<juce::AudioParameterFloat> ("releaseMs",  "Retreat ms",  60.0f, 600.0f, 240.0f));
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("cooldownMs", "Cooldown ms", 25.0f, 300.0f, 75.0f));
-    p.push_back (std::make_unique<juce::AudioParameterBool>  ("busyIntercept", "Intercept on Decay", true));
+    p.push_back (std::make_unique<juce::AudioParameterBool>  ("busyIntercept", "Intercept Mid-Hit", true));
 
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("pixelScale", "Pixel Scale", 1.0f, 8.0f, 3.0f));
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("shakalGrit", "Shakal Grit", 0.0f, 1.0f, 0.45f));
-    p.push_back (std::make_unique<juce::AudioParameterInt>   ("fpsLock",    "Choppy FPS",  10, 60, 16));
+    p.push_back (std::make_unique<juce::AudioParameterInt>   ("fpsLock",    "Choppy FPS",  10, 60, 24));
     p.push_back (std::make_unique<juce::AudioParameterBool>  ("mirrorRight","Mirror Right Hand", true));
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("handScale",  "Hand Scale",  0.65f, 1.45f, 1.00f));
 
@@ -107,6 +112,10 @@ void SP404DanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     const float slowR = 1.0f - std::exp (-1.0f / (0.150f * sr));
 
     const float sens  = apvts.getRawParameterValue ("sensitivity")->load();
+    const bool enLow  = apvts.getRawParameterValue ("enableLow")->load() > 0.5f;
+    const bool enMid  = apvts.getRawParameterValue ("enableMid")->load() > 0.5f;
+    const bool enHigh = apvts.getRawParameterValue ("enableHigh")->load() > 0.5f;
+
     const float tLow  = apvts.getRawParameterValue ("threshLow")->load();
     const float tMid  = apvts.getRawParameterValue ("threshMid")->load();
     const float tHigh = apvts.getRawParameterValue ("threshHigh")->load();
@@ -132,11 +141,11 @@ void SP404DanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         const float bandHigh = mono - highLpState;
         const float bandMid  = highLpState - lowLpState;
 
-        if (detLow.step  (std::abs (bandLow),  tLow,  sens, fastA, fastR, slowA, slowR, minGap))
+        if (enLow && detLow.step (std::abs (bandLow), tLow, sens, fastA, fastR, slowA, slowR, minGap))
             padHitCounters[pLow - 1].fetch_add (1, std::memory_order_relaxed);
-        if (detMid.step  (std::abs (bandMid),  tMid,  sens, fastA, fastR, slowA, slowR, minGap))
+        if (enMid && detMid.step (std::abs (bandMid), tMid, sens, fastA, fastR, slowA, slowR, minGap))
             padHitCounters[pMid - 1].fetch_add (1, std::memory_order_relaxed);
-        if (detHigh.step (std::abs (bandHigh), tHigh, sens, fastA, fastR, slowA, slowR, minGap))
+        if (enHigh && detHigh.step (std::abs (bandHigh), tHigh, sens, fastA, fastR, slowA, slowR, minGap))
             padHitCounters[pHigh - 1].fetch_add (1, std::memory_order_relaxed);
     }
 
