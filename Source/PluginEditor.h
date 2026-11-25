@@ -50,7 +50,7 @@ private:
         juce::Slider slider;
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     };
-    std::array<LabeledSlider, 10> sliders;
+    std::array<LabeledSlider, 14> sliders;
     juce::ToggleButton mirrorToggle { "Mirror Right Hand" };
     juce::ToggleButton interceptToggle { "Intercept on Decay" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> mirrorAttach, interceptAttach;
