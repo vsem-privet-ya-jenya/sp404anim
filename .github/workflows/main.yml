@@ -1,0 +1,28 @@
+name: Build SP-404 Dance VST3
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows-vst3:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout plugin source
+        uses: actions/checkout@v4
+
+      - name: Clone JUCE 8
+        run: git clone --depth 1 --branch 8.0.6 https://github.com/juce-framework/JUCE.git JUCE
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build VST3
+        run: cmake --build build --config Release --target SP404Dance_VST3
+
+      - name: Upload Windows .vst3
+        uses: actions/upload-artifact@v4
+        with:
+          name: SP404Dance-Windows-VST3
+          path: build/SP404Dance_artefacts/Release/VST3
