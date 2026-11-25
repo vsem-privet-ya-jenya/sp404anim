@@ -1,0 +1,152 @@
+// SP-404 Dance — Cmajor DSP Processor (Zero-Coloration Pass-Through)
+// Test instantly via Cmajor JIT VST3 plugin or export to JUCE/VST3 via VS Code / cmaj CLI
+
+graph SP404Dance [[ main ]]
+{
+    input stream float<2> in;
+    output stream float<2> out;
+
+    input event float sensitivity  [[ name: "Sensitivity", min: 0.5, max: 4.0, init: 2.10 ]];
+    input event float threshLow    [[ name: "Low Thresh",  min: 0.05, max: 0.85, init: 0.34 ]];
+    input event float threshMid    [[ name: "Mid Thresh",  min: 0.05, max: 0.85, init: 0.30 ]];
+    input event float threshHigh   [[ name: "High Thresh", min: 0.05, max: 0.85, init: 0.24 ]];
+    input event float cooldownMs   [[ name: "Cooldown ms", min: 25, max: 300, init: 75 ]];
+    input event float pixelScale   [[ name: "Pixel Scale", min: 1, max: 8, init: 3 ]];
+    input event float shakalGrit   [[ name: "Shakal Grit", min: 0.0, max: 1.0, init: 0.45 ]];
+    input event float fpsLock      [[ name: "FPS Lock",    min: 10, max: 60, init: 16 ]];
+
+    input event int padLow         [[ name: "Low Pad",     min: 1, max: 12, init: 1 ]];
+    input event int padMid         [[ name: "Mid Pad",     min: 1, max: 12, init: 6 ]];
+    input event int padHigh        [[ name: "High Pad",    min: 1, max: 12, init: 4 ]];
+
+    output event int padHit;
+    output event float masterPeak;
+
+    node lp  = std::filters::tpt::onepole::Processor (std::filters::tpt::onepole::Mode::lowpass, 185.0f);
+    node hpM = std::filters::tpt::onepole::Processor (std::filters::tpt::onepole::Mode::highpass, 185.0f);
+    node lpM = std::filters::tpt::onepole::Processor (std::filters::tpt::onepole::Mode::lowpass, 2600.0f);
+    node hp  = std::filters::tpt::onepole::Processor (std::filters::tpt::onepole::Mode::highpass, 2600.0f);
+
+    node detector = TransientEngine;
+
+    connection
+    {
+        // Untouched dry pass-through
+        in -> out;
+
+        // Parallel 3-band analysis taps
+        (in[0] + in[1]) * 0.5f -> lp.in;
+        (in[0] + in[1]) * 0.5f -> hpM.in;
+        hpM.out -> lpM.in;
+        (in[0] + in[1]) * 0.5f -> hp.in;
+
+        lp.out  -> detector.lowIn;
+        lpM.out -> detector.midIn;
+        hp.out  -> detector.highIn;
+        (in[0] + in[1]) * 0.5f -> detector.monoIn;
+
+        sensitivity -> detector.sensitivity;
+        threshLow   -> detector.threshLow;
+        threshMid   -> detector.threshMid;
+        threshHigh  -> detector.threshHigh;
+        cooldownMs  -> detector.cooldownMs;
+        padLow      -> detector.padLow;
+        padMid      -> detector.padMid;
+        padHigh     -> detector.padHigh;
+
+        detector.padHit     -> padHit;
+        detector.masterPeak -> masterPeak;
+    }
+}
+
+processor TransientEngine
+{
+    input stream float lowIn, midIn, highIn, monoIn;
+    input event float sensitivity, threshLow, threshMid, threshHigh, cooldownMs;
+    input event int padLow, padMid, padHigh;
+
+    output event int padHit;
+    output event float masterPeak;
+
+    float sens = 2.10f;
+    float tLow = 0.34f, tMid = 0.30f, tHigh = 0.24f;
+    float coolSamples = 3300.0f;
+    int pLow = 1, pMid = 6, pHigh = 4;
+
+    event sensitivity (float v) { sens = v; }
+    event threshLow   (float v) { tLow = v; }
+    event threshMid   (float v) { tMid = v; }
+    event threshHigh  (float v) { tHigh = v; }
+    event cooldownMs  (float v) { coolSamples = (v * 0.001f) * float (processor.frequency); }
+    event padLow      (int v)   { pLow = v; }
+    event padMid      (int v)   { pMid = v; }
+    event padHigh     (int v)   { pHigh = v; }
+
+    void main()
+    {
+        float fL = 0.0f, sL = 0.0f, fM = 0.0f, sM = 0.0f, fH = 0.0f, sH = 0.0f;
+        bool armL = true, armM = true, armH = true;
+        int leftCd = 0, rightCd = 0, peakTimer = 0;
+        float peakHold = 0.0f;
+
+        loop
+        {
+            let fastA = 0.012f;
+            let fastR = 0.001f;
+            let slowR = 0.0002f;
+
+            let aL = abs (lowIn);
+            fL += (aL - fL) * (aL > fL ? fastA : fastR);
+            sL += (aL - sL) * slowR;
+            let trL = max (0.0f, fL - sL * 0.68f) * sens * 1.45f;
+
+            let aM = abs (midIn);
+            fM += (aM - fM) * (aM > fM ? fastA : fastR);
+            sM += (aM - sM) * slowR;
+            let trM = max (0.0f, fM - sM * 0.68f) * sens * 1.45f;
+
+            let aH = abs (highIn);
+            fH += (aH - fH) * (aH > fH ? fastA : fastR);
+            sH += (aH - sH) * slowR;
+            let trH = max (0.0f, fH - sH * 0.68f) * sens * 1.45f;
+
+            if (!armL && trL < tLow  * 0.62f) armL = true;
+            if (!armM && trM < tMid  * 0.62f) armM = true;
+            if (!armH && trH < tHigh * 0.62f) armH = true;
+
+            if (leftCd > 0) --leftCd;
+            if (rightCd > 0) --rightCd;
+
+            if (armL && trL >= tLow)
+            {
+                armL = false;
+                let isLeft = ((pLow - 1) % 4) < 2;
+                if (isLeft && leftCd == 0) { padHit <- pLow; leftCd = int (coolSamples); }
+                else if (!isLeft && rightCd == 0) { padHit <- pLow; rightCd = int (coolSamples); }
+            }
+            if (armM && trM >= tMid)
+            {
+                armM = false;
+                let isLeft = ((pMid - 1) % 4) < 2;
+                if (isLeft && leftCd == 0) { padHit <- pMid; leftCd = int (coolSamples); }
+                else if (!isLeft && rightCd == 0) { padHit <- pMid; rightCd = int (coolSamples); }
+            }
+            if (armH && trH >= tHigh)
+            {
+                armH = false;
+                let isLeft = ((pHigh - 1) % 4) < 2;
+                if (isLeft && leftCd == 0) { padHit <- pHigh; leftCd = int (coolSamples); }
+                else if (!isLeft && rightCd == 0) { padHit <- pHigh; rightCd = int (coolSamples); }
+            }
+
+            peakHold = max (peakHold * 0.9995f, abs (monoIn));
+            if (++peakTimer >= 512)
+            {
+                masterPeak <- peakHold;
+                peakTimer = 0;
+            }
+
+            advance();
+        }
+    }
+}

@@ -1,0 +1,17 @@
+{
+  "CmajorVersion": 1,
+  "ID": "com.sp404dance.visualiser",
+  "version": "1.0.0",
+  "name": "SP-404 Dance",
+  "description": "FL Studio Mixer SP-404 Transient Visualiser (Zero-Coloration Pass-Through)",
+  "category": "effect",
+  "manufacturer": "SP404Dance",
+  "isInstrument": false,
+  "source": "SP404Dance.cmajor",
+  "view": {
+    "src": "ui/index.html",
+    "width": 460,
+    "height": 700,
+    "resizable": true
+  }
+}

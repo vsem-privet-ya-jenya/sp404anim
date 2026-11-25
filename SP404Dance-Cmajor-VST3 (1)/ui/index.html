@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SP-404 Dance</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #121417;
+      color: #E6EAF0;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    .wrap {
+      position: relative;
+      width: 100%;
+      max-width: 440px;
+      padding: 8px;
+    }
+    canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      image-rendering: pixelated;
+      border-radius: 4px;
+      border: 1px solid #2A2F37;
+    }
+    .menu {
+      display: none;
+      position: absolute;
+      inset: 14px;
+      background: rgba(22, 25, 29, 0.95);
+      border: 1px solid #2A2F37;
+      border-radius: 6px;
+      padding: 16px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+    .menu.open { display: block; }
+    .menu h2 { font-size: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; }
+    .row { margin-bottom: 10px; }
+    .row label { display: flex; justify-content: space-between; margin-bottom: 4px; color: #9CA3AF; }
+    .row input[type=range] { width: 100%; accent-color: #FF4D38; }
+    .close-btn { background: #2A2F37; color: #fff; border: 0; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="c" width="493" height="773"></canvas>
+    <div id="menu" class="menu">
+      <h2>
+        <span>SP-404 Dance Setup</span>
+        <button class="close-btn" id="closeBtn">Close</button>
+      </h2>
+      <div class="row"><label><span>Sensitivity</span><span id="vSens">2.1</span></label><input id="sSens" type="range" min="0.5" max="4.0" step="0.1" value="2.1" /></div>
+      <div class="row"><label><span>Low Threshold</span><span id="vTLow">0.34</span></label><input id="sTLow" type="range" min="0.05" max="0.85" step="0.01" value="0.34" /></div>
+      <div class="row"><label><span>Mid Threshold</span><span id="vTMid">0.30</span></label><input id="sTMid" type="range" min="0.05" max="0.85" step="0.01" value="0.30" /></div>
+      <div class="row"><label><span>High Threshold</span><span id="vTHigh">0.24</span></label><input id="sTHigh" type="range" min="0.05" max="0.85" step="0.01" value="0.24" /></div>
+      <div class="row"><label><span>Cooldown (ms)</span><span id="vCd">75</span></label><input id="sCd" type="range" min="25" max="300" step="5" value="75" /></div>
+      <div class="row"><label><span>Pixel Scale (Shakal)</span><span id="vPx">3</span></label><input id="sPx" type="range" min="1" max="8" step="0.5" value="3" /></div>
+      <div class="row"><label><span>Shakal Grit</span><span id="vGr">45%</span></label><input id="sGr" type="range" min="0" max="1" step="0.05" value="0.45" /></div>
+    </div>
+  </div>
+  <script type="module">
+    const W = 493, H = 773;
+    const COLS = [66, 144, 221, 297], ROWS = [527, 596, 665];
+    const PADS = Array.from({ length: 12 }, (_, i) => {
+      const col = i % 4, row = Math.floor(i / 4);
+      return { id: i + 1, hand: col < 2 ? 'left' : 'right', x: COLS[col], y: ROWS[row], w: 56, h: 48, cx: COLS[col] + 28, cy: ROWS[row] + 24 };
+    });
+    const DISPLAY = { x: 194, y: 247, w: 112, h: 52 };
+    const ANCHOR_W = { tipX: 0.815, tipY: 0.042 };
+    const ANCHOR_S = { tipX: 0.678, tipY: 0.018 };
+
+    let pixelScale = 3, shakalGrit = 0.45, fpsLock = 16;
+    let attackMs = 32, releaseMs = 135;
+    const hands = {
+      left: { phase: 'idle', padId: 1, t0: 0 },
+      right: { phase: 'idle', padId: 4, t0: 0 },
+    };
+    const glow = {};
+    let lastPad = null, masterPeak = 0;
+
+    const bg = new Image(); bg.src = 'assets/sp404.jpg';
+    const h1 = new Image(); h1.src = 'assets/hand_left_1.png';
+    const h2 = new Image(); h2.src = 'assets/hand_left_2.png';
+
+    const mainCanvas = document.getElementById('c');
+    const mainCtx = mainCanvas.getContext('2d');
+    const off = document.createElement('canvas');
+    const menu = document.getElementById('menu');
+
+    function triggerPad(id) {
+      const pad = PADS[id - 1];
+      if (!pad) return;
+      const h = hands[pad.hand];
+      h.phase = 'approach';
+      h.padId = id;
+      h.t0 = performance.now();
+    }
+
+    mainCanvas.addEventListener('click', (e) => {
+      const r = mainCanvas.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width) * W;
+      const y = ((e.clientY - r.top) / r.height) * H;
+      if (x >= DISPLAY.x && x <= DISPLAY.x + DISPLAY.w && y >= DISPLAY.y && y <= DISPLAY.y + DISPLAY.h) {
+        menu.classList.toggle('open');
+        return;
+      }
+      const p = PADS.find(p => x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h);
+      if (p) triggerPad(p.id);
+    });
+    document.getElementById('closeBtn').onclick = () => menu.classList.remove('open');
+
+    // Cmajor WebView PatchConnection integration (active inside DAW / cmaj host)
+    export default function createPatchView(patchConnection) {
+      patchConnection.addEventListener('padHit', (padId) => triggerPad(padId));
+      patchConnection.addEventListener('masterPeak', (v) => { masterPeak = v; });
+
+      const bind = (id, param, outId, fmt = (v) => v) => {
+        const el = document.getElementById(id);
+        el.oninput = () => {
+          const val = parseFloat(el.value);
+          document.getElementById(outId).textContent = fmt(val);
+          patchConnection.sendEventOrValue(param, val);
+        };
+      };
+      bind('sSens', 'sensitivity', 'vSens', v => v.toFixed(1));
+      bind('sTLow', 'threshLow', 'vTLow', v => v.toFixed(2));
+      bind('sTMid', 'threshMid', 'vTMid', v => v.toFixed(2));
+      bind('sTHigh', 'threshHigh', 'vTHigh', v => v.toFixed(2));
+      bind('sCd', 'cooldownMs', 'vCd', v => String(v));
+      document.getElementById('sPx').oninput = (e) => { pixelScale = parseFloat(e.target.value); document.getElementById('vPx').textContent = pixelScale; };
+      document.getElementById('sGr').oninput = (e) => { shakalGrit = parseFloat(e.target.value); document.getElementById('vGr').textContent = Math.round(shakalGrit * 100) + '%'; };
+    }
+
+    const SEG = { '0': 63, '1': 6, '2': 91, '3': 79, '4': 102, '5': 109, '6': 125, '7': 7, '8': 127, '9': 111, 'P': 115, ' ': 0 };
+    function drawSeg7(ctx, text) {
+      ctx.fillStyle = '#0D0607';
+      ctx.fillRect(DISPLAY.x, DISPLAY.y, DISPLAY.w, DISPLAY.h);
+      const chars = text.slice(0, 3).padStart(3, ' ').split('');
+      const dw = 20, dh = 38, gap = 8, t = 3.6;
+      const sx = DISPLAY.x + (DISPLAY.w - (3 * dw + 2 * gap)) / 2 + 4;
+      const sy = DISPLAY.y + (DISPLAY.h - dh) / 2;
+      chars.forEach((ch, idx) => {
+        const mask = SEG[ch] || 0;
+        ctx.save();
+        ctx.translate(sx + idx * (dw + gap), sy);
+        ctx.transform(1, 0, -0.14, 1, 0, 0);
+        for (let s = 0; s < 7; s++) {
+          ctx.fillStyle = (mask & (1 << s)) ? '#FF2A1A' : 'rgba(72,18,18,0.38)';
+          const mid = dh / 2;
+          if (s === 0) ctx.fillRect(t, 0, dw - 2 * t, t);
+          if (s === 1) ctx.fillRect(dw - t, t, t, mid - 1.5 * t);
+          if (s === 2) ctx.fillRect(dw - t, mid + 0.5 * t, t, mid - 1.5 * t);
+          if (s === 3) ctx.fillRect(t, dh - t, dw - 2 * t, t);
+          if (s === 4) ctx.fillRect(0, mid + 0.5 * t, t, mid - 1.5 * t);
+          if (s === 5) ctx.fillRect(0, t, t, mid - 1.5 * t);
+          if (s === 6) ctx.fillRect(t, mid - t / 2, dw - 2 * t, t);
+        }
+        ctx.restore();
+      });
+    }
+
+    let lastTick = 0;
+    function loop(now) {
+      requestAnimationFrame(loop);
+      for (const side of ['left', 'right']) {
+        const h = hands[side], el = now - h.t0;
+        if (h.phase === 'approach' && el >= attackMs) { h.phase = 'strike'; h.t0 = now; glow[h.padId] = 1; lastPad = h.padId; }
+        else if (h.phase === 'strike' && el >= 60) { h.phase = 'retreat'; h.t0 = now; }
+        else if (h.phase === 'retreat' && el >= releaseMs) { h.phase = 'idle'; }
+      }
+      for (let i = 1; i <= 12; i++) if (glow[i] > 0) glow[i] = Math.max(0, glow[i] - 0.065);
+      if (now - lastTick < 1000 / fpsLock) return;
+      lastTick = now;
+
+      const ow = Math.max(64, Math.round(W / pixelScale)), oh = Math.max(100, Math.round(H / pixelScale));
+      if (off.width !== ow || off.height !== oh) { off.width = ow; off.height = oh; }
+      const ctx = off.getContext('2d');
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, ow, oh);
+      ctx.scale(ow / W, oh / H);
+      if (bg.complete) ctx.drawImage(bg, 0, 0, W, H);
+      drawSeg7(ctx, lastPad && glow[lastPad] > 0.15 ? 'P' + String(lastPad).padStart(2, '0') : '404');
+      for (const p of PADS) {
+        if ((glow[p.id] || 0) > 0.02) {
+          ctx.fillStyle = `rgba(255,77,56,${glow[p.id] * 0.65})`;
+          ctx.fillRect(p.x + 2, p.y + 2, p.w - 4, p.h - 4);
+        }
+      }
+      if (h1.complete && h2.complete) {
+        const sz = 248;
+        for (const side of ['left', 'right']) {
+          const h = hands[side]; if (h.phase === 'idle') continue;
+          const p = PADS[h.padId - 1], el = now - h.t0;
+          const spr = h.phase === 'strike' ? h2 : h1;
+          const anc = h.phase === 'strike' ? ANCHOR_S : ANCHOR_W;
+          let tx = p.cx, ty = p.cy;
+          if (h.phase === 'approach') { const t = Math.min(1, el / attackMs); ty = H + 150 + (p.cy + 30 - (H + 150)) * t; }
+          if (h.phase === 'retreat') { const t = Math.min(1, el / releaseMs); ty = p.cy + 30 + (H + 150 - (p.cy + 30)) * t; }
+          ctx.save();
+          ctx.translate(tx, ty);
+          if (side === 'right') ctx.scale(-1, 1);
+          ctx.drawImage(spr, -anc.tipX * sz, -anc.tipY * sz, sz, sz);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+      mainCtx.imageSmoothingEnabled = false;
+      mainCtx.clearRect(0, 0, W, H);
+      mainCtx.drawImage(off, 0, 0, W, H);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
