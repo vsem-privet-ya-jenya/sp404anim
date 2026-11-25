@@ -17,14 +17,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout SP404DanceAudioProcessor::cr
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("sensitivity", "Sensitivity", 0.5f, 4.0f, 2.10f));
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshLow",   "Low Thresh",  0.05f, 0.85f, 0.34f));
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshMid",   "Mid Thresh",  0.05f, 0.85f, 0.30f));
-    p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshHigh",  "High Thresh", 0.05f, 0.85f, 0.24f));
+    p.push_back (std::make_unique<juce::AudioParameterFloat> ("threshHigh",  "High Thresh", 0.05f, 0.85f, 0.18f));
 
     p.push_back (std::make_unique<juce::AudioParameterInt> ("padLow",  "Low Pad",  1, 12, 1));
     p.push_back (std::make_unique<juce::AudioParameterInt> ("padMid",  "Mid Pad",  1, 12, 6));
     p.push_back (std::make_unique<juce::AudioParameterInt> ("padHigh", "High Pad", 1, 12, 4));
 
-    p.push_back (std::make_unique<juce::AudioParameterFloat> ("attackMs",   "Attack ms",   16.0f, 120.0f, 32.0f));
-    p.push_back (std::make_unique<juce::AudioParameterFloat> ("releaseMs",  "Release ms",  60.0f, 320.0f, 135.0f));
+    p.push_back (std::make_unique<juce::AudioParameterFloat> ("attackMs",   "Attack ms",   16.0f, 250.0f, 32.0f));
+    p.push_back (std::make_unique<juce::AudioParameterFloat> ("releaseMs",  "Release ms",  60.0f, 600.0f, 135.0f));
     p.push_back (std::make_unique<juce::AudioParameterFloat> ("cooldownMs", "Cooldown ms", 25.0f, 300.0f, 75.0f));
     p.push_back (std::make_unique<juce::AudioParameterBool>  ("busyIntercept", "Intercept on Decay", true));
 
