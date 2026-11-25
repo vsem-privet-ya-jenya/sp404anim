@@ -17,12 +17,7 @@ jobs:
 
       - name: Download Cmajor CLI (Linux x64)
         run: |
-          URL=$(curl -s https://api.github.com/repos/cmajor-lang/cmajor/releases/latest | grep browser_download_url | grep -i linux | grep -E '\.zip"' | head -n 1 | cut -d '"' -f 4)
-          curl -L "$URL" -o cmaj.zip
-          unzip -q cmaj.zip -d cmaj-tools
-          CMAJ_BIN=$(find cmaj-tools -name cmaj -type f | head -n 1)
-          chmod +x "$CMAJ_BIN"
-          echo "$(dirname "$CMAJ_BIN")" >> $GITHUB_PATH
+          URL=$(curl -s https://api.github.com/repos/cmajor-lang/cmajor/releases/latest | grep browser_download_url | grep -i linux | grep -iE 'x64|x86_64|amd64' | grep -E '\.zip"' | head -n 1 | cut -d '"' -f 4)
 
       - name: Generate JUCE C++ Project
         run: |
