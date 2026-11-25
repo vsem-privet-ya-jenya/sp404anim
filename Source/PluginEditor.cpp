@@ -21,6 +21,23 @@ namespace
         return { (float) COL_XS[idx % 4], (float) ROW_YS[idx / 4], (float) PAD_W, (float) PAD_H };
     }
 
+    juce::Point<float> getPadCenter (int padId)
+    {
+        return getPadRect (padId).getCentre();
+    }
+
+    juce::Point<float> getHoverPos (int padId, bool isRight)
+    {
+        const auto c = getPadCenter (padId);
+        return { c.x + (isRight ? 4.0f : -4.0f), c.y + 26.0f };
+    }
+
+    juce::Point<float> getRestPos (int padId, bool isRight)
+    {
+        const auto c = getPadCenter (padId);
+        return { c.x + (isRight ? 48.0f : -48.0f), (float) SP_H + 165.0f };
+    }
+
     bool isRightPad (int padId) { return ((padId - 1) % 4) >= 2; }
 
     const juce::Rectangle<float> DISPLAY_RECT (194.0f, 247.0f, 112.0f, 52.0f);
@@ -43,6 +60,16 @@ SP404DanceAudioProcessorEditor::SP404DanceAudioProcessorEditor (SP404DanceAudioP
     handWindupImg = makeScaledHand (BinaryData::hand_left_1_png, BinaryData::hand_left_1_pngSize);
     handStrikeImg = makeScaledHand (BinaryData::hand_left_2_png, BinaryData::hand_left_2_pngSize);
 
+    const auto leftRest = getRestPos (1, false);
+    leftHand.padId = 1;
+    leftHand.startX = leftHand.curX = leftRest.x;
+    leftHand.startY = leftHand.curY = leftRest.y;
+
+    const auto rightRest = getRestPos (7, true);
+    rightHand.padId = 7;
+    rightHand.startX = rightHand.curX = rightRest.x;
+    rightHand.startY = rightHand.curY = rightRest.y;
+
     for (size_t i = 0; i < 12; ++i)
         lastSeenCounters[i] = processor.padHitCounters[i].load (std::memory_order_relaxed);
 
@@ -51,8 +78,15 @@ SP404DanceAudioProcessorEditor::SP404DanceAudioProcessorEditor (SP404DanceAudioP
     settingsOverlay.addAndMakeVisible (closeBtn);
     closeBtn.onClick = [this] { settingsVisible = false; settingsOverlay.setVisible (false); repaint(); };
 
+    settingsOverlay.addAndMakeVisible (lowBandToggle);
+    settingsOverlay.addAndMakeVisible (midBandToggle);
+    settingsOverlay.addAndMakeVisible (highBandToggle);
+    lowBandAttach  = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, "enableLow",  lowBandToggle);
+    midBandAttach  = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, "enableMid",  midBandToggle);
+    highBandAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, "enableHigh", highBandToggle);
+
     struct ParamSpec { const char* id; const char* name; };
-    const ParamSpec specs[14] = {
+    const ParamSpec specs[15] = {
         { "sensitivity", "Sensitivity" },
         { "threshLow",   "Low Thresh" },
         { "threshMid",   "Mid Thresh" },
@@ -61,24 +95,25 @@ SP404DanceAudioProcessorEditor::SP404DanceAudioProcessorEditor (SP404DanceAudioP
         { "padMid",      "Mid Pad (1-12)" },
         { "padHigh",     "High Pad (1-12)" },
         { "cooldownMs",  "Cooldown (ms)" },
-        { "pixelScale",  "Pixel Scale" },
-        { "shakalGrit",  "Shakal Grit" },
+        { "lingerMs",    "Stay on Pad (ms)" },
         { "attackMs",    "Attack (ms)" },
-        { "releaseMs",   "Release (ms)" },
+        { "releaseMs",   "Retreat (ms)" },
         { "fpsLock",     "Choppy FPS" },
-        { "handScale",   "Hand Scale" }
+        { "handScale",   "Hand Scale" },
+        { "pixelScale",  "Pixel Scale" },
+        { "shakalGrit",  "Shakal Grit" }
     };
 
-    for (size_t i = 0; i < 14; ++i)
+    for (size_t i = 0; i < 15; ++i)
     {
         auto& item = sliders[i];
         item.label.setText (specs[i].name, juce::dontSendNotification);
-        item.label.setFont (juce::FontOptions (12.0f));
+        item.label.setFont (juce::FontOptions (11.5f));
         item.label.setColour (juce::Label::textColourId, juce::Colour (0xffcfd6e0));
         settingsOverlay.addAndMakeVisible (item.label);
 
         item.slider.setSliderStyle (juce::Slider::LinearHorizontal);
-        item.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 20);
+        item.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 20);
         settingsOverlay.addAndMakeVisible (item.slider);
         item.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (processor.apvts, specs[i].id, item.slider);
     }
@@ -100,20 +135,27 @@ void SP404DanceAudioProcessorEditor::resized()
     settingsOverlay.setBounds (area);
 
     auto inner = settingsOverlay.getLocalBounds().reduced (14);
-    auto top = inner.removeFromTop (28);
+    auto top = inner.removeFromTop (26);
     closeBtn.setBounds (top.removeFromRight (70));
-    inner.removeFromTop (8);
+    inner.removeFromTop (6);
+
+    auto bandRow = inner.removeFromTop (24);
+    const int bw = bandRow.getWidth() / 3;
+    lowBandToggle.setBounds  (bandRow.removeFromLeft (bw));
+    midBandToggle.setBounds  (bandRow.removeFromLeft (bw));
+    highBandToggle.setBounds (bandRow);
+    inner.removeFromTop (6);
 
     for (auto& item : sliders)
     {
-        auto row = inner.removeFromTop (32);
+        auto row = inner.removeFromTop (30);
         item.label.setBounds (row.removeFromLeft (115));
         item.slider.setBounds (row);
     }
 
     inner.removeFromTop (6);
-    mirrorToggle.setBounds (inner.removeFromTop (26));
-    interceptToggle.setBounds (inner.removeFromTop (26));
+    mirrorToggle.setBounds (inner.removeFromTop (24));
+    interceptToggle.setBounds (inner.removeFromTop (24));
 }
 
 void SP404DanceAudioProcessorEditor::dispatchPadHit (int padId, double nowMs, bool ignoreCooldown)
@@ -127,12 +169,22 @@ void SP404DanceAudioProcessorEditor::dispatchPadHit (int padId, double nowMs, bo
     if (! ignoreCooldown && (nowMs - hand.lastTriggerMs) < cooldownMs)
         return;
 
-    if (hand.phase != HandPhase::Idle)
+    if (hand.phase == HandPhase::Approach || hand.phase == HandPhase::Strike)
     {
-        if (! intercept || hand.phase != HandPhase::Retreat)
+        if (! intercept)
+            return;
+        if (hand.phase == HandPhase::Strike && (nowMs - hand.phaseStartMs) < 24.0)
             return;
     }
 
+    const auto from = (hand.phase == HandPhase::Idle)
+        ? getRestPos (padId, right)
+        : juce::Point<float> (hand.curX, hand.curY);
+
+    hand.startX = from.x;
+    hand.startY = from.y;
+    hand.curX = from.x;
+    hand.curY = from.y;
     hand.phase = HandPhase::Approach;
     hand.padId = padId;
     hand.phaseStartMs = nowMs;
@@ -180,27 +232,85 @@ void SP404DanceAudioProcessorEditor::timerCallback()
     }
 
     const float attackMs  = processor.apvts.getRawParameterValue ("attackMs")->load();
+    const float lingerMs  = processor.apvts.getRawParameterValue ("lingerMs")->load();
     const float releaseMs = processor.apvts.getRawParameterValue ("releaseMs")->load();
-    const float holdMs    = juce::jlimit (40.0f, 95.0f, releaseMs * 0.45f);
+    const float holdMs    = juce::jlimit (45.0f, 110.0f, attackMs * 0.8f + 38.0f);
+    const float reboundMs = 75.0f;
 
     for (HandState* h : { &leftHand, &rightHand })
     {
+        if (h->phase == HandPhase::Idle)
+            continue;
+
         const double el = nowMs - h->phaseStartMs;
-        if (h->phase == HandPhase::Approach && el >= attackMs)
+        const auto center = getPadCenter (h->padId);
+        const auto hover  = getHoverPos (h->padId, h->isRight);
+        const auto rest   = getRestPos (h->padId, h->isRight);
+
+        if (h->phase == HandPhase::Approach)
         {
-            h->phase = HandPhase::Strike;
-            h->phaseStartMs = nowMs;
-            padGlow[h->padId - 1] = 1.0f;
-            lastPadHit = h->padId;
+            const float distToHover = std::hypot (h->startX - hover.x, h->startY - hover.y);
+            const bool isSamePadTap = distToHover < 28.0f;
+            const float dur = isSamePadTap ? juce::jmax (22.0f, attackMs * 0.65f) : juce::jmax (16.0f, attackMs);
+            const float t = juce::jlimit (0.0f, 1.0f, (float) el / dur);
+            const float e = 1.0f - std::pow (1.0f - t, 3.0f);
+            const float arcLift = isSamePadTap ? std::sin (t * 3.14159265f) * 14.0f : 0.0f;
+
+            h->curX = h->startX + (hover.x - h->startX) * e;
+            h->curY = h->startY + (hover.y - h->startY) * e + arcLift;
+
+            if (el >= dur)
+            {
+                h->phase = HandPhase::Strike;
+                h->phaseStartMs = nowMs;
+                h->curX = center.x;
+                h->curY = center.y;
+                padGlow[h->padId - 1] = 1.0f;
+                lastPadHit = h->padId;
+            }
         }
-        else if (h->phase == HandPhase::Strike && el >= holdMs)
+        else if (h->phase == HandPhase::Strike)
         {
-            h->phase = HandPhase::Retreat;
-            h->phaseStartMs = nowMs;
+            h->curX = center.x;
+            h->curY = center.y;
+
+            if (el >= holdMs)
+            {
+                h->phase = HandPhase::Hover;
+                h->phaseStartMs = nowMs;
+                h->startX = center.x;
+                h->startY = center.y;
+            }
         }
-        else if (h->phase == HandPhase::Retreat && el >= releaseMs)
+        else if (h->phase == HandPhase::Hover)
         {
-            h->phase = HandPhase::Idle;
+            const float rt = juce::jlimit (0.0f, 1.0f, (float) el / reboundMs);
+            const float re = 1.0f - std::pow (1.0f - rt, 3.0f);
+            h->curX = h->startX + (hover.x - h->startX) * re;
+            h->curY = h->startY + (hover.y - h->startY) * re;
+
+            if (el >= lingerMs)
+            {
+                h->phase = HandPhase::Retreat;
+                h->phaseStartMs = nowMs;
+                h->startX = h->curX;
+                h->startY = h->curY;
+            }
+        }
+        else if (h->phase == HandPhase::Retreat)
+        {
+            const float dur = juce::jmax (40.0f, releaseMs);
+            const float t = juce::jlimit (0.0f, 1.0f, (float) el / dur);
+            const float e = t * t * t;
+            h->curX = h->startX + (rest.x - h->startX) * e;
+            h->curY = h->startY + (rest.y - h->startY) * e;
+
+            if (el >= dur)
+            {
+                h->phase = HandPhase::Idle;
+                h->curX = rest.x;
+                h->curY = rest.y;
+            }
         }
     }
 
@@ -300,10 +410,7 @@ void SP404DanceAudioProcessorEditor::paint (juce::Graphics& g)
     const float scale = juce::jmax (1.0f, processor.apvts.getRawParameterValue ("pixelScale")->load());
     const float grit  = processor.apvts.getRawParameterValue ("shakalGrit")->load();
     const float handScale = processor.apvts.getRawParameterValue ("handScale")->load();
-    const float attackMs  = processor.apvts.getRawParameterValue ("attackMs")->load();
-    const float releaseMs = processor.apvts.getRawParameterValue ("releaseMs")->load();
     const bool mirrorRight = processor.apvts.getRawParameterValue ("mirrorRight")->load() > 0.5f;
-    const int fps = (int) processor.apvts.getRawParameterValue ("fpsLock")->load();
 
     const int offW = juce::jmax (64, (int) std::round ((float) SP_W / scale));
     const int offH = juce::jmax (100, (int) std::round ((float) SP_H / scale));
@@ -345,45 +452,16 @@ void SP404DanceAudioProcessorEditor::paint (juce::Graphics& g)
             }
         }
 
-        const double nowMs = juce::Time::getMillisecondCounterHiRes();
         const float drawSz = 248.0f * handScale;
 
         for (HandState* h : { &leftHand, &rightHand })
         {
             if (h->phase == HandPhase::Idle) continue;
-            auto pad = getPadRect (h->padId);
-            const double el = nowMs - h->phaseStartMs;
 
-            const float restX = h->isRight ? (pad.getCentreX() + 48.0f) : (pad.getCentreX() - 48.0f);
-            const float restY = (float) SP_H + 165.0f;
-            const float hoverY = pad.getCentreY() + 34.0f;
-
-            float tx = pad.getCentreX(), ty = pad.getCentreY();
-            const juce::Image* spr = &handWindupImg;
-            float tipX = WINDUP_TIP_X, tipY = WINDUP_TIP_Y;
-
-            if (h->phase == HandPhase::Approach)
-            {
-                float t = juce::jlimit (0.0f, 1.0f, (float) el / juce::jmax (12.0f, attackMs));
-                if (fps <= 24) t = std::round (t * 4.0f) / 4.0f;
-                const float e = 1.0f - std::pow (1.0f - t, 3.0f);
-                tx = restX + (pad.getCentreX() - restX) * e;
-                ty = restY + (hoverY - restY) * e;
-            }
-            else if (h->phase == HandPhase::Strike)
-            {
-                spr = &handStrikeImg;
-                tipX = STRIKE_TIP_X;
-                tipY = STRIKE_TIP_Y;
-            }
-            else if (h->phase == HandPhase::Retreat)
-            {
-                float t = juce::jlimit (0.0f, 1.0f, (float) el / juce::jmax (20.0f, releaseMs));
-                if (fps <= 24) t = std::round (t * 5.0f) / 5.0f;
-                const float e = t * t * t;
-                tx = pad.getCentreX() + (restX - pad.getCentreX()) * e;
-                ty = hoverY + (restY - hoverY) * e;
-            }
+            const bool isStrike = (h->phase == HandPhase::Strike);
+            const juce::Image* spr = isStrike ? &handStrikeImg : &handWindupImg;
+            const float tipX = isStrike ? STRIKE_TIP_X : WINDUP_TIP_X;
+            const float tipY = isStrike ? STRIKE_TIP_Y : WINDUP_TIP_Y;
 
             if (spr->isValid())
             {
@@ -391,7 +469,7 @@ void SP404DanceAudioProcessorEditor::paint (juce::Graphics& g)
                     .translated (-tipX * drawSz, -tipY * drawSz);
                 if (h->isRight && mirrorRight)
                     xform = xform.scaled (-1.0f, 1.0f);
-                xform = xform.translated (tx, ty);
+                xform = xform.translated (h->curX, h->curY);
                 og.drawImageTransformed (*spr, xform);
             }
         }
