@@ -23,7 +23,7 @@ private:
 
     juce::Image bgImage, handWindupImg, handStrikeImg, offscreenBuffer;
 
-    enum class HandPhase { Idle, Approach, Strike, Retreat };
+    enum class HandPhase { Idle, Approach, Strike, Hover, Retreat };
     struct HandState
     {
         bool isRight = false;
@@ -31,6 +31,10 @@ private:
         int padId = 1;
         double phaseStartMs = 0.0;
         double lastTriggerMs = -1000.0;
+        float startX = 0.0f;
+        float startY = 0.0f;
+        float curX = 0.0f;
+        float curY = 0.0f;
     };
 
     HandState leftHand { false }, rightHand { true };
@@ -50,10 +54,15 @@ private:
         juce::Slider slider;
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     };
-    std::array<LabeledSlider, 14> sliders;
-    juce::ToggleButton mirrorToggle { "Mirror Right Hand" };
-    juce::ToggleButton interceptToggle { "Intercept on Decay" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> mirrorAttach, interceptAttach;
+    std::array<LabeledSlider, 15> sliders;
+
+    juce::ToggleButton lowBandToggle  { "Low (Kick)" };
+    juce::ToggleButton midBandToggle  { "Mid (Snare)" };
+    juce::ToggleButton highBandToggle { "High (Hat)" };
+    juce::ToggleButton mirrorToggle   { "Mirror Right Hand" };
+    juce::ToggleButton interceptToggle{ "Intercept Mid-Hit" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        lowBandAttach, midBandAttach, highBandAttach, mirrorAttach, interceptAttach;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SP404DanceAudioProcessorEditor)
 };
